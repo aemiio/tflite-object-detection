@@ -1,15 +1,15 @@
 package ai.onnxruntime.example.objectdetection
 
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import java.io.InputStream
-import java.nio.FloatBuffer
-import java.util.Collections
-import java.util.Optional
 import android.util.Log
+import org.tensorflow.lite.Interpreter
+import java.io.FileInputStream
+import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
 
 internal data class Result(
     var outputBitmap: Bitmap,
@@ -20,144 +20,199 @@ internal class ObjectDetector {
 
     companion object {
         const val TAG = "ObjectDetector"
+        const val INPUT_SIZE = 640
+        const val NUM_THREADS = 4
+    }
+
+    private var tflite: Interpreter? = null
+
+    fun initialize(context: Context) {
+        val tfliteOptions = Interpreter.Options().apply {
+            setNumThreads(NUM_THREADS)
+        }
+
+        try {
+            val modelFile = context.assets.openFd("best_float32.tflite")
+            val fileChannel = FileInputStream(modelFile.fileDescriptor).channel
+            val modelBuffer = fileChannel.map(
+                FileChannel.MapMode.READ_ONLY,
+                modelFile.startOffset,
+                modelFile.declaredLength
+            )
+            tflite = Interpreter(modelBuffer, tfliteOptions)
+            Log.d(TAG, "TFLite model loaded successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading TFLite model", e)
+            throw RuntimeException("Error loading TFLite model", e)
+        }
     }
 
     fun detect(
         inputStream: InputStream,
-        ortEnv: OrtEnvironment,
-        ortSession: OrtSession,
+        context: Context,
         confidenceThreshold: Float = 0.25f
     ): Result {
+
+        if (tflite == null) {
+            initialize(context)
+        }
+
         // Load and preprocess the image
         val originalBitmap = BitmapFactory.decodeStream(inputStream)
-        val inputTensor = preprocessImage(originalBitmap, ortEnv)
 
-        inputTensor.use {
-            // Run inference with the correct input name "images"
-            val output = ortSession.run(
-                Collections.singletonMap("images", inputTensor),
-                Collections.singleton("output0")
-            )
+        // Prepare input and output buffers
+        val inputBuffer = preprocessImage(originalBitmap)
 
-            output.use {
-                val outputObj = output.get("output0")
-                // Handle Optional return type
-                val outputTensor = if (outputObj is Optional<*>) {
-                    if (outputObj.isPresent) {
-                        outputObj.get() as OnnxTensor
-                    } else {
-                        throw RuntimeException("Output tensor is empty")
-                    }
-                } else {
-                    outputObj as OnnxTensor
-                }
+        // Output shape is [1, 71, 8400] based on the model info
+        val outputShape = intArrayOf(1, 71, 8400)
+        val outputBuffer = Array(1) { Array(71) { FloatArray(8400) } }
 
-                val detections = postprocessYOLOv8(
-                    outputTensor,
-                    originalBitmap.width,
-                    originalBitmap.height,
-                    confidenceThreshold
-                )
+        // Run inference
+        tflite?.run(inputBuffer, outputBuffer)
 
-                return Result(originalBitmap, detections)
-            }
-        }
+        // Process results
+        val detections = postprocessYOLOv8(
+            outputBuffer[0],
+            originalBitmap.width,
+            originalBitmap.height,
+            confidenceThreshold
+        )
+
+        return Result(originalBitmap, detections)
     }
 
-    private fun preprocessImage(bitmap: Bitmap, ortEnv: OrtEnvironment): OnnxTensor {
-        val inputWidth = 640
-        val inputHeight = 640
+    private fun preprocessImage(bitmap: Bitmap): ByteBuffer {
+        val inputBuffer = ByteBuffer.allocateDirect(4 * INPUT_SIZE * INPUT_SIZE * 3)
+        inputBuffer.order(ByteOrder.nativeOrder())
 
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
-        val buffer = FloatBuffer.allocate(inputWidth * inputHeight * 3)
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
+        val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
+        resizedBitmap.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
 
-        val pixels = IntArray(inputWidth * inputHeight)
-        resizedBitmap.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+        inputBuffer.rewind()
 
-        // HWC to CHW and normalize
-        for (y in 0 until inputHeight) {
-            for (x in 0 until inputWidth) {
-                val pixel = pixels[y * inputWidth + x]
-                // RGB order with normalization
-                val r = ((pixel shr 16) and 0xFF) / 255.0f
-                val g = ((pixel shr 8) and 0xFF) / 255.0f
-                val b = (pixel and 0xFF) / 255.0f
+        for (pixel in pixels) {
+            // TFLite model expects HWC format - already matches the model input [1,640,640,3]
+            val r = (pixel shr 16 and 0xFF) / 255.0f
+            val g = (pixel shr 8 and 0xFF) / 255.0f
+            val b = (pixel and 0xFF) / 255.0f
 
-                buffer.put(r)
-                buffer.put(g)
-                buffer.put(b)
-            }
+            inputBuffer.putFloat(r)
+            inputBuffer.putFloat(g)
+            inputBuffer.putFloat(b)
         }
-        buffer.rewind()
 
-        return OnnxTensor.createTensor(
-            ortEnv,
-            buffer,
-            longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong())
-        )
+        return inputBuffer
     }
 
     private fun postprocessYOLOv8(
-        outputTensor: OnnxTensor,
+        outputBuffer: Array<FloatArray>,
         originalWidth: Int,
         originalHeight: Int,
         confidenceThreshold: Float
     ): Array<FloatArray> {
-        val results = mutableListOf<FloatArray>()
+        val rawResults = mutableListOf<FloatArray>()
 
-        // Get raw output data
-        val outputData = outputTensor.floatBuffer
-        val dimensions = outputTensor.info.shape
+        Log.d(TAG, "Original image dimensions: $originalWidth x $originalHeight")
 
-        // Log dimensions for debugging
-        Log.d(TAG, "Output tensor shape: ${dimensions.contentToString()}")
-
-        // Debug first few values
-        val debugSize = minOf(20, outputData.capacity())
-        val debugValues = FloatArray(debugSize)
-        val originalPosition = outputData.position()
-        outputData.get(debugValues)
-        Log.d(TAG, "First $debugSize values: ${debugValues.joinToString()}")
-        outputData.position(originalPosition) // Reset position
-
-        // YOLOv8 output is transposed: [1, 84, 8400] where 84 = 4(box) + 80(classes)
-        // Correct indexing for this format
-        val anchors = dimensions[2].toInt() // 8400
-        val numValues = dimensions[1].toInt() // 84
-        val numClasses = numValues - 4 // 80
-
-        val scaleX = originalWidth / 640f
-        val scaleY = originalHeight / 640f
-
-        // Process each detection (each anchor)
-        for (i in 0 until anchors) {
-            // Find best class and score for this anchor
+        for (i in 0 until 8400) {
             var maxClassScore = 0f
             var bestClassIdx = 0
 
-            // Check each class (positions 4 to end)
-            for (c in 4 until numValues) {
-                val score = outputData.get(c * anchors + i)
+            for (c in 4 until 71) {
+                val score = outputBuffer[c][i]
                 if (score > maxClassScore) {
                     maxClassScore = score
-                    bestClassIdx = c - 4 // Adjust for class index
+                    bestClassIdx = c - 4
                 }
             }
 
-            // If confidence meets threshold
             if (maxClassScore >= confidenceThreshold) {
-                // Get box coordinates (in YOLOv8, these are already in xywh format)
-                val x = outputData.get(0 * anchors + i) * scaleX
-                val y = outputData.get(1 * anchors + i) * scaleY
-                val w = outputData.get(2 * anchors + i) * scaleX
-                val h = outputData.get(3 * anchors + i) * scaleY
+                // IMPORTANT: YOLOv8 outputs normalized coordinates (0-1)
+                // Convert to model space (0-640)
+                val x = outputBuffer[0][i] * INPUT_SIZE
+                val y = outputBuffer[1][i] * INPUT_SIZE
+                val w = outputBuffer[2][i] * INPUT_SIZE
+                val h = outputBuffer[3][i] * INPUT_SIZE
 
-                // Add detection to results [x, y, w, h, confidence, class]
-                results.add(floatArrayOf(x, y, w, h, maxClassScore, bestClassIdx.toFloat()))
+                Log.d(TAG, "Detection in model space: x=$x, y=$y, w=$w, h=$h, conf=$maxClassScore, class=$bestClassIdx")
+
+                rawResults.add(floatArrayOf(x, y, w, h, maxClassScore, bestClassIdx.toFloat()))
             }
         }
 
-        Log.d(TAG, "Found ${results.size} valid detections")
-        return results.toTypedArray()
+        return applyNMS(rawResults.toTypedArray(), 0.5f).toTypedArray()
+    }
+
+    // Non-Maximum Suppression to filter overlapping boxes
+    private fun applyNMS(boxes: Array<FloatArray>, iouThreshold: Float): List<FloatArray> {
+
+        if (boxes.isEmpty()) return emptyList()
+
+        // Sort boxes by confidence (highest first)
+        val sortedBoxes = boxes.sortedByDescending { it[4] }
+        val selected = mutableListOf<FloatArray>()
+        val active = BooleanArray(sortedBoxes.size) { true }
+
+        // Process boxes in order of confidence
+        for (i in sortedBoxes.indices) {
+            // Skip if this box was already eliminated
+            if (!active[i]) continue
+
+            // Add this box to the selected list
+            selected.add(sortedBoxes[i])
+
+            // Compare with remaining boxes
+            for (j in i + 1 until sortedBoxes.size) {
+                // Skip already eliminated boxes
+                if (!active[j]) continue
+
+                // If IOU is high enough, eliminate box j
+                if (calculateIOU(sortedBoxes[i], sortedBoxes[j]) >= iouThreshold) {
+                    active[j] = false
+                }
+            }
+        }
+
+        return selected
+    }
+
+    // Calculate Intersection over Union between two boxes
+    private fun calculateIOU(box1: FloatArray, box2: FloatArray): Float {
+        // Convert from center format (x,y,w,h) to corner format (x1,y1,x2,y2)
+        val box1X1 = box1[0] - box1[2] / 2
+        val box1Y1 = box1[1] - box1[3] / 2
+        val box1X2 = box1[0] + box1[2] / 2
+        val box1Y2 = box1[1] + box1[3] / 2
+
+        val box2X1 = box2[0] - box2[2] / 2
+        val box2Y1 = box2[1] - box2[3] / 2
+        val box2X2 = box2[0] + box2[2] / 2
+        val box2Y2 = box2[1] + box2[3] / 2
+
+        // Calculate area of each box
+        val box1Area = box1[2] * box1[3]
+        val box2Area = box2[2] * box2[3]
+
+        // Calculate intersection coordinates
+        val xMin = maxOf(box1X1, box2X1)
+        val yMin = maxOf(box1Y1, box2Y1)
+        val xMax = minOf(box1X2, box2X2)
+        val yMax = minOf(box1Y2, box2Y2)
+
+        // If boxes don't intersect
+        if (xMax < xMin || yMax < yMin) return 0f
+
+        // Calculate intersection area
+        val intersectionArea = (xMax - xMin) * (yMax - yMin)
+
+        // Calculate IoU
+        val unionArea = box1Area + box2Area - intersectionArea
+        return intersectionArea / unionArea
+    }
+
+    fun close() {
+        tflite?.close()
+        tflite = null
     }
 }
