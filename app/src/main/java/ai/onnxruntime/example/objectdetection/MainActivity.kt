@@ -1,8 +1,6 @@
 package ai.onnxruntime.example.objectdetection
 
-import ai.onnxruntime.*
 import ai.onnxruntime.example.objectdetection.databinding.ActivityMainBinding
-import ai.onnxruntime.extensions.OrtxPackage
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -15,17 +13,18 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import java.io.InputStream
-import java.util.*
 import android.view.View
 import android.widget.SeekBar
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private var ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private lateinit var ortSession: OrtSession
     private var imageid = 0
     private lateinit var classes: List<String>
     private var confidenceThreshold = 0.25f
+
+    companion object {
+        const val TAG = "ORTObjectDetection"
+    }
 
     @SuppressLint("UseCompatLoadingForDrawables")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,7 +39,7 @@ class MainActivity : AppCompatActivity() {
         imageid = 0
         classes = readClasses()
 
-        // Set up the threshold slider
+
         binding.thresholdSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 confidenceThreshold = progress / 100f
@@ -54,25 +53,20 @@ class MainActivity : AppCompatActivity() {
         binding.thresholdSlider.progress = (confidenceThreshold * 100).toInt()
         binding.thresholdValue.text = String.format("%.2f", confidenceThreshold)
 
-        // Initialize the model
-        val sessionOptions = OrtSession.SessionOptions()
-        sessionOptions.registerCustomOpLibrary(OrtxPackage.getLibraryPath())
-        ortSession = ortEnv.createSession(readModel(), sessionOptions)
-
         binding.objectDetectionButton.setOnClickListener {
             runObjectDetection()
         }
     }
 
     private fun runObjectDetection() {
-        // Show loading indicator
+
         binding.progressBar.visibility = View.VISIBLE
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val imagestream = readInputImage()
 
-                // Update UI with the input image
+
                 withContext(Dispatchers.Main) {
                     binding.imageView1.setImageBitmap(
                         BitmapFactory.decodeStream(imagestream)
@@ -80,12 +74,12 @@ class MainActivity : AppCompatActivity() {
                 }
                 imagestream.reset()
 
-                // Run detection in background
-                val objDetector = ObjectDetector()
-                val result =
-                    objDetector.detect(imagestream, ortEnv, ortSession, confidenceThreshold)
 
-                // Update UI on main thread
+                val objDetector = ObjectDetector()
+                val result = objDetector.detect(imagestream, this@MainActivity, confidenceThreshold)
+                objDetector.close()
+
+
                 withContext(Dispatchers.Main) {
                     updateUI(result)
                     binding.progressBar.visibility = View.GONE
@@ -107,88 +101,87 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI(result: Result) {
-        val mutableBitmap: Bitmap = result.outputBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        Log.d(TAG, "Starting updateUI with ${result.outputBox.size} detections")
+
+        // Get actual displayed image dimensions
+        val bitmap = result.outputBitmap
+        val displayWidth = bitmap.width.toFloat()
+        val displayHeight = bitmap.height.toFloat()
+
+        // Log dimensions for debugging
+        Log.d(TAG, "Original image dimensions: ${displayWidth}x${displayHeight}")
+
+        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutableBitmap)
 
-        // Add these debug lines
-        val detectionResults = StringBuilder()
-        detectionResults.append("Detected ${result.outputBox.size} objects\n\n")
-
-        // If no detections, add debug info and set lower threshold
-        if (result.outputBox.isEmpty()) {
-            detectionResults.append("No objects detected above threshold: $confidenceThreshold\n")
-            detectionResults.append("Try lowering the threshold value or check post-processing logic\n")
-            binding.imageView2.setImageBitmap(mutableBitmap)
-            binding.detectionResultsText.text = detectionResults.toString()
-            return
-        }
-
-        // Existing drawing code
         val boxPaint = Paint().apply {
-            color = Color.RED
+            color = Color.GREEN
             style = Paint.Style.STROKE
             strokeWidth = 5f
+            isAntiAlias = true
         }
 
         val textPaint = Paint().apply {
             color = Color.WHITE
-            textSize = 40f
-            style = Paint.Style.FILL
+            textSize = 25f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
         }
 
-        val textBgPaint = Paint().apply {
-            color = Color.BLACK
-            alpha = 160
-            style = Paint.Style.FILL
-        }
+        val detectionResults = StringBuilder()
+        detectionResults.append("Found ${result.outputBox.size} detections\n\n")
 
-        canvas.drawBitmap(mutableBitmap, 0.0f, 0.0f, null)
+        // correct approach based on how YOLOv8 outputs coordinates
+        for (i in result.outputBox.indices) {
+            val box = result.outputBox[i]
 
-        // Process each detection
-        for (box in result.outputBox) {
-            // Convert centerX, centerY, width, height to left, top, right, bottom
-            val left = box[0] - box[2] / 2
-            val top = box[1] - box[3] / 2
-            val right = box[0] + box[2] / 2
-            val bottom = box[1] + box[3] / 2
+            // Log raw box values
+            Log.d(TAG, "Raw box $i values: ${box.contentToString()}")
 
-            // Log detection details
-            Log.d(TAG, "Drawing box: left=$left, top=$top, right=$right, bottom=$bottom")
+            // Reinterpret the coordinates based on INPUT_SIZE (640)
+            // The raw x,y,w,h are relative to the 640x640 input the model processed
+            val modelWidth = ObjectDetector.INPUT_SIZE.toFloat()
+            val modelHeight = ObjectDetector.INPUT_SIZE.toFloat()
 
-            // Draw bounding box
+            // Calculate ratios to scale from model space to image space
+            val ratioWidth = displayWidth / modelWidth
+            val ratioHeight = displayHeight / modelHeight
+
+            // Apply transformation
+            val x = box[0] * ratioWidth
+            val y = box[1] * ratioHeight
+            val w = box[2] * ratioWidth
+            val h = box[3] * ratioHeight
+            val conf = box[4]
+            val classId = box[5].toInt()
+
+            // Calculate rectangle coordinates
+            val left = Math.max(0f, x - w / 2)
+            val top = Math.max(0f, y - h / 2)
+            val right = Math.min(displayWidth, x + w / 2)
+            val bottom = Math.min(displayHeight, y + h / 2)
+
+            Log.d(TAG, "Drawing box $i: ($left,$top,$right,$bottom) on image ${displayWidth}x${displayHeight}")
+
+            // Draw box
             canvas.drawRect(left, top, right, bottom, boxPaint)
 
-            // Prepare text label
-            val classIdx = box[5].toInt()
-            if (classIdx >= 0 && classIdx < classes.size) {
-                val label = classes[classIdx]
-                val confidence = box[4]
-                val text = "$label: %.2f".format(confidence)
+//            // Draw crosshair at center point for debugging
+//            canvas.drawLine(x - 10, y, x + 10, y, boxPaint)
+//            canvas.drawLine(x, y - 10, x, y + 10, boxPaint)
 
-                // Draw text background
-                val textWidth = textPaint.measureText(text)
-                val textHeight = textPaint.textSize
-                canvas.drawRect(left, top - textHeight - 5, left + textWidth + 10, top, textBgPaint)
+            // Add to results text
+            val className = if (classId >= 0 && classId < classes.size) classes[classId] else "Unknown"
+            detectionResults.append("Box $i: $className (${(conf * 100).toInt()}%)\n")
+            detectionResults.append("  Center: (${x.toInt()}, ${y.toInt()}) Size: ${w.toInt()}x${h.toInt()}\n")
 
-                // Draw text
-                canvas.drawText(text, left + 5, top - 5, textPaint)
-
-                // Add to text results
-                detectionResults.append("Class: $label, Confidence: %.2f%%\n".format(confidence * 100))
-                detectionResults.append("Position: [x=${box[0].toInt()}, y=${box[1].toInt()}], Size: [w=${box[2].toInt()}, h=${box[3].toInt()}]\n\n")
-            } else {
-                // Add error info
-                detectionResults.append("Error: Invalid class index $classIdx (max: ${classes.size-1})\n")
-            }
+            // Draw label
+            val label = "$className ${(conf * 100).toInt()}%"
+            canvas.drawText(label, left, Math.max(30f, top - 5f), textPaint)
         }
 
         binding.imageView2.setImageBitmap(mutableBitmap)
         binding.detectionResultsText.text = detectionResults.toString()
-    }
-
-    private fun readModel(): ByteArray {
-        val modelID = R.raw.grade1_model
-        return resources.openRawResource(modelID).readBytes()
     }
 
     private fun readClasses(): List<String> {
@@ -196,14 +189,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun readInputImage(): InputStream {
-        // Choose which naming pattern to use
-        val useTestImages = true // set to false to use braille_sample files
 
-        val imageCount = 5 // Update this to match how many images you have
+        val useTestImages = true
+
+        val imageCount = 5
         imageid = (imageid + 1) % imageCount
         val fileNumber = imageid + 1 // Use 1-based numbering (1,2,3,4,5)
 
-        // Try both file formats (jpg first, then png)
+
         return try {
             val fileName = if (useTestImages)
                 "test_object_detection_${fileNumber}.jpg"
@@ -220,19 +213,8 @@ class MainActivity : AppCompatActivity() {
 
                 assets.open(fileName)
             } catch (e: java.io.FileNotFoundException) {
-                // If no image files found, use a sample from resources
                 assets.open("test_object_detection_1.jpg")
             }
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        ortEnv.close()
-        ortSession.close()
-    }
-
-    companion object {
-        const val TAG = "ORTObjectDetection"
     }
 }
