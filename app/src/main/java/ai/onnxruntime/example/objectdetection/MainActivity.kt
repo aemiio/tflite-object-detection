@@ -226,6 +226,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // fix this if di tamarin whawha
     private fun readInputImage(): InputStream {
 
         val useTestImages = true
