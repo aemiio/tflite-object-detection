@@ -32,7 +32,7 @@ internal class ObjectDetector {
         }
 
         try {
-            val modelFile = context.assets.openFd("best_float32.tflite")
+            val modelFile = context.assets.openFd("g1_best_float32.tflite")
             val fileChannel = FileInputStream(modelFile.fileDescriptor).channel
             val modelBuffer = fileChannel.map(
                 FileChannel.MapMode.READ_ONLY,
