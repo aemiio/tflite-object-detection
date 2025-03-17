@@ -9,18 +9,22 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import kotlinx.coroutines.*
-import java.io.InputStream
 import android.view.View
 import android.widget.SeekBar
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var imageid = 0
     private lateinit var classes: List<String>
     private var confidenceThreshold = 0.25f
+    private var currentModel = ObjectDetector.MODEL_G1
 
     companion object {
         const val TAG = "ORTObjectDetection"
@@ -40,7 +44,8 @@ class MainActivity : AppCompatActivity() {
         classes = readClasses()
 
 
-        binding.thresholdSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        binding.thresholdSlider.setOnSeekBarChangeListener(object :
+            SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 confidenceThreshold = progress / 100f
                 binding.thresholdValue.text = String.format("%.2f", confidenceThreshold)
@@ -52,6 +57,20 @@ class MainActivity : AppCompatActivity() {
         })
         binding.thresholdSlider.progress = (confidenceThreshold * 100).toInt()
         binding.thresholdValue.text = String.format("%.2f", confidenceThreshold)
+
+        binding.modelG1Button.setOnClickListener {
+            currentModel = ObjectDetector.MODEL_G1
+            binding.modelG1Button.isSelected = true
+            binding.modelG2Button.isSelected = false
+            Toast.makeText(this, "Model G1 selected", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.modelG2Button.setOnClickListener {
+            currentModel = ObjectDetector.MODEL_G2
+            binding.modelG1Button.isSelected = false
+            binding.modelG2Button.isSelected = true
+            Toast.makeText(this, "Model G2 selected", Toast.LENGTH_SHORT).show()
+        }
 
         binding.objectDetectionButton.setOnClickListener {
             runObjectDetection()
@@ -76,14 +95,23 @@ class MainActivity : AppCompatActivity() {
 
 
                 val objDetector = ObjectDetector()
-                val result = objDetector.detect(imagestream, this@MainActivity, confidenceThreshold)
+                val result = objDetector.detect(
+                    imagestream,
+                    this@MainActivity,
+                    confidenceThreshold,
+                    currentModel
+                )
                 objDetector.close()
 
 
                 withContext(Dispatchers.Main) {
                     updateUI(result)
                     binding.progressBar.visibility = View.GONE
-                    Toast.makeText(baseContext, "ObjectDetection performed!", Toast.LENGTH_SHORT)
+                    Toast.makeText(
+                        baseContext,
+                        "ObjectDetection performed with ${if (currentModel == ObjectDetector.MODEL_G1) "G1" else "G2"} model!\" ",
+                        Toast.LENGTH_SHORT
+                    )
                         .show()
                 }
             } catch (e: Exception) {
@@ -161,7 +189,10 @@ class MainActivity : AppCompatActivity() {
             val right = Math.min(displayWidth, x + w / 2)
             val bottom = Math.min(displayHeight, y + h / 2)
 
-            Log.d(TAG, "Drawing box $i: ($left,$top,$right,$bottom) on image ${displayWidth}x${displayHeight}")
+            Log.d(
+                TAG,
+                "Drawing box $i: ($left,$top,$right,$bottom) on image ${displayWidth}x${displayHeight}"
+            )
 
             // Draw box
             canvas.drawRect(left, top, right, bottom, boxPaint)
@@ -171,7 +202,8 @@ class MainActivity : AppCompatActivity() {
 //            canvas.drawLine(x, y - 10, x, y + 10, boxPaint)
 
             // Add to results text
-            val className = if (classId >= 0 && classId < classes.size) classes[classId] else "Unknown"
+            val className =
+                if (classId >= 0 && classId < classes.size) classes[classId] else "Unknown"
             detectionResults.append("Box $i: $className (${(conf * 100).toInt()}%)\n")
             detectionResults.append("  Center: (${x.toInt()}, ${y.toInt()}) Size: ${w.toInt()}x${h.toInt()}\n")
 
@@ -185,7 +217,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun readClasses(): List<String> {
-        return resources.openRawResource(R.raw.classes).bufferedReader().readLines()
+        return resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
     }
 
     private fun readInputImage(): InputStream {

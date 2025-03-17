@@ -22,17 +22,25 @@ internal class ObjectDetector {
         const val TAG = "ObjectDetector"
         const val INPUT_SIZE = 640
         const val NUM_THREADS = 4
+        const val MODEL_G1 = "g1_best_float32.tflite"
+        const val MODEL_G2 = "g2_best_float32.tflite"
     }
 
     private var tflite: Interpreter? = null
+    private var currentModel: String = MODEL_G1
+    private var numClasses: Int = 71 // 71 classes in the model g1
 
-    fun initialize(context: Context) {
+    fun initialize(context: Context, modelName: String = MODEL_G1) {
+
+        currentModel = modelName
+        numClasses = if (currentModel == MODEL_G1) 67 else 89
+
         val tfliteOptions = Interpreter.Options().apply {
             setNumThreads(NUM_THREADS)
         }
 
         try {
-            val modelFile = context.assets.openFd("g1_best_float32.tflite")
+            val modelFile = context.assets.openFd(modelName)
             val fileChannel = FileInputStream(modelFile.fileDescriptor).channel
             val modelBuffer = fileChannel.map(
                 FileChannel.MapMode.READ_ONLY,
@@ -40,7 +48,7 @@ internal class ObjectDetector {
                 modelFile.declaredLength
             )
             tflite = Interpreter(modelBuffer, tfliteOptions)
-            Log.d(TAG, "TFLite model loaded successfully")
+            Log.d(TAG, "TFLite model $modelName loaded successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error loading TFLite model", e)
             throw RuntimeException("Error loading TFLite model", e)
@@ -50,11 +58,12 @@ internal class ObjectDetector {
     fun detect(
         inputStream: InputStream,
         context: Context,
-        confidenceThreshold: Float = 0.25f
+        confidenceThreshold: Float = 0.25f,
+        modelName: String = MODEL_G1
     ): Result {
 
-        if (tflite == null) {
-            initialize(context)
+        if (tflite == null || modelName != currentModel) {
+            initialize(context, modelName)
         }
 
         // Load and preprocess the image
@@ -63,9 +72,9 @@ internal class ObjectDetector {
         // Prepare input and output buffers
         val inputBuffer = preprocessImage(originalBitmap)
 
-        // Output shape is [1, 71, 8400] based on the model info
-        val outputShape = intArrayOf(1, 71, 8400)
-        val outputBuffer = Array(1) { Array(71) { FloatArray(8400) } }
+        // Output tensor shape is [1, 71, 8400] or [1, 93, 8400]
+        val outputShape = if (modelName == MODEL_G1) 71 else 93
+        val outputBuffer = Array(1) { Array(outputShape) { FloatArray(8400) } }
 
         // Run inference
         tflite?.run(inputBuffer, outputBuffer)
@@ -112,14 +121,18 @@ internal class ObjectDetector {
         confidenceThreshold: Float
     ): Array<FloatArray> {
         val rawResults = mutableListOf<FloatArray>()
+        val outputShape = outputBuffer.size // 71 or 93
 
         Log.d(TAG, "Original image dimensions: $originalWidth x $originalHeight")
+        Log.d(TAG, "Processing model output with $outputShape classes")
 
+        // 8400 total number of detection boxes predicted by the model (yolo architecture)
         for (i in 0 until 8400) {
             var maxClassScore = 0f
             var bestClassIdx = 0
 
-            for (c in 4 until 71) {
+            // magstart sya after ng x,y,w,h values
+            for (c in 4 until outputShape) {
                 val score = outputBuffer[c][i]
                 if (score > maxClassScore) {
                     maxClassScore = score
@@ -135,7 +148,10 @@ internal class ObjectDetector {
                 val w = outputBuffer[2][i] * INPUT_SIZE
                 val h = outputBuffer[3][i] * INPUT_SIZE
 
-                Log.d(TAG, "Detection in model space: x=$x, y=$y, w=$w, h=$h, conf=$maxClassScore, class=$bestClassIdx")
+                Log.d(
+                    TAG,
+                    "Detection in model space: x=$x, y=$y, w=$w, h=$h, conf=$maxClassScore, class=$bestClassIdx"
+                )
 
                 rawResults.add(floatArrayOf(x, y, w, h, maxClassScore, bestClassIdx.toFloat()))
             }
