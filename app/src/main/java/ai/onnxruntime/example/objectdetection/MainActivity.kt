@@ -217,7 +217,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun readClasses(): List<String> {
-        return resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
+        return if (currentModel == ObjectDetector.MODEL_G2) {
+            resources.openRawResource(R.raw.g2_classes).bufferedReader().readLines()
+        } else {
+            resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
+        }
     }
 
     private fun readInputImage(): InputStream {
