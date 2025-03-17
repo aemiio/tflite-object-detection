@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity() {
             currentModel = ObjectDetector.MODEL_G1
             binding.modelG1Button.isSelected = true
             binding.modelG2Button.isSelected = false
+            classes = readClasses()
             Toast.makeText(this, "Model G1 selected", Toast.LENGTH_SHORT).show()
         }
 
@@ -69,6 +70,7 @@ class MainActivity : AppCompatActivity() {
             currentModel = ObjectDetector.MODEL_G2
             binding.modelG1Button.isSelected = false
             binding.modelG2Button.isSelected = true
+            classes = readClasses()
             Toast.makeText(this, "Model G2 selected", Toast.LENGTH_SHORT).show()
         }
 
