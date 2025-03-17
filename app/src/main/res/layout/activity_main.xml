@@ -46,7 +46,21 @@
                     android:text="0.25"
                     android:textSize="16sp"
                     android:layout_marginStart="8dp"/>
+
             </LinearLayout>
+
+            <Button
+                android:id="@+id/modelG1Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Model G1"
+                android:layout_marginEnd="8dp"/>
+
+            <Button
+                android:id="@+id/modelG2Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Model G2"/>
 
             <Button
                 android:id="@+id/objectDetectionButton"
