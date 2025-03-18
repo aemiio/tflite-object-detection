@@ -63,6 +63,12 @@
                 android:text="Model G2"/>
 
             <Button
+                android:id="@+id/bothModelsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Both Model"/>
+
+            <Button
                 android:id="@+id/objectDetectionButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
