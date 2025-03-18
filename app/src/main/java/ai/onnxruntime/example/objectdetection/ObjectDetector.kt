@@ -11,7 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 
-internal data class Result(
+data class Result(
     var outputBitmap: Bitmap,
     var outputBox: Array<FloatArray>
 )
@@ -24,17 +24,27 @@ internal class ObjectDetector {
         const val NUM_THREADS = 4
         const val MODEL_G1 = "g1_best_float32.tflite"
         const val MODEL_G2 = "g2_best_float32.tflite"
+        const val BOTH_MODELS = "both_models"
     }
 
-    private var tflite: Interpreter? = null
+    private var tfliteG1: Interpreter? = null
+    private var tfliteG2: Interpreter? = null
     private var currentModel: String = MODEL_G1
-    private var numClasses: Int = 71 // 71 classes in the model g1
+    private val bothModelsMerger = BothModelsMerger()
 
     fun initialize(context: Context, modelName: String = MODEL_G1) {
 
         currentModel = modelName
-        numClasses = if (currentModel == MODEL_G1) 67 else 89
+        if (modelName == MODEL_G1 || modelName == BOTH_MODELS) {
+            initializeModel(context, MODEL_G1)
+        }
 
+        if (modelName == MODEL_G2 || modelName == BOTH_MODELS) {
+            initializeModel(context, MODEL_G2)
+        }
+    }
+
+    private fun initializeModel(context: Context, modelName: String) {
         val tfliteOptions = Interpreter.Options().apply {
             setNumThreads(NUM_THREADS)
         }
@@ -47,11 +57,17 @@ internal class ObjectDetector {
                 modelFile.startOffset,
                 modelFile.declaredLength
             )
-            tflite = Interpreter(modelBuffer, tfliteOptions)
+
+            if (modelName == MODEL_G1) {
+                tfliteG1 = Interpreter(modelBuffer, tfliteOptions)
+            } else {
+                tfliteG2 = Interpreter(modelBuffer, tfliteOptions)
+            }
+
             Log.d(TAG, "TFLite model $modelName loaded successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading TFLite model", e)
-            throw RuntimeException("Error loading TFLite model", e)
+            Log.e(TAG, "Error loading TFLite model $modelName", e)
+            throw RuntimeException("Error loading TFLite model $modelName", e)
         }
     }
 
@@ -62,7 +78,9 @@ internal class ObjectDetector {
         modelName: String = MODEL_G1
     ): Result {
 
-        if (tflite == null || modelName != currentModel) {
+        if ((tfliteG1 == null && (modelName == MODEL_G1 || modelName == BOTH_MODELS)) ||
+            (tfliteG2 == null && (modelName == MODEL_G2 || modelName == BOTH_MODELS)) ||
+            currentModel != modelName) {
             initialize(context, modelName)
         }
 
@@ -72,22 +90,55 @@ internal class ObjectDetector {
         // Prepare input and output buffers
         val inputBuffer = preprocessImage(originalBitmap)
 
-        // Output tensor shape is [1, 71, 8400] or [1, 93, 8400]
+        return when (modelName) {
+            BOTH_MODELS -> {
+                // Run both models and merge results
+                val g1Result = runModel(MODEL_G1, inputBuffer, originalBitmap, confidenceThreshold)
+                val g2Result = runModel(MODEL_G2, inputBuffer, originalBitmap, confidenceThreshold)
+
+                // Merge results from both models
+                mergeResults(g1Result, g2Result, originalBitmap, confidenceThreshold)
+            }
+            else -> {
+                // Run single model
+                runModel(modelName, inputBuffer, originalBitmap, confidenceThreshold)
+            }
+        }
+    }
+
+    private fun runModel(
+        modelName: String,
+        inputBuffer: ByteBuffer,
+        bitmap: Bitmap,
+        confidenceThreshold: Float
+    ): Result {
         val outputShape = if (modelName == MODEL_G1) 71 else 93
         val outputBuffer = Array(1) { Array(outputShape) { FloatArray(8400) } }
 
+        // Select which model to use
+        val interpreter = if (modelName == MODEL_G1) tfliteG1 else tfliteG2
+
         // Run inference
-        tflite?.run(inputBuffer, outputBuffer)
+        interpreter?.run(inputBuffer, outputBuffer)
 
         // Process results
         val detections = postprocessYOLOv8(
             outputBuffer[0],
-            originalBitmap.width,
-            originalBitmap.height,
+            bitmap.width,
+            bitmap.height,
             confidenceThreshold
         )
 
-        return Result(originalBitmap, detections)
+        return Result(bitmap, detections)
+    }
+
+    private fun mergeResults(
+        g1Result: Result,
+        g2Result: Result,
+        bitmap: Bitmap,
+        confidenceThreshold: Float
+    ): Result {
+        return bothModelsMerger.mergeResults(g1Result, g2Result, bitmap)
     }
 
     private fun preprocessImage(bitmap: Bitmap): ByteBuffer {
@@ -228,7 +279,9 @@ internal class ObjectDetector {
     }
 
     fun close() {
-        tflite?.close()
-        tflite = null
+        tfliteG1?.close()
+        tfliteG1 = null
+        tfliteG2?.close()
+        tfliteG2 = null
     }
 }
