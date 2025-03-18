@@ -2,6 +2,8 @@ package ai.onnxruntime.example.objectdetection
 
 data class BrailleEntry(val binary: String, val meaning: String)
 
+// Braille map that is based on the data.yaml class id
+
 object BrailleMap {
     val G1brailleMap = mapOf(
         //number
@@ -172,7 +174,7 @@ object BrailleMap {
         return when (grade) {
             1 -> G1brailleMap
             2 -> G2brailleMap
-            else -> emptyMap()  // Return empty map if grade is not specified
+            else -> emptyMap()
         }
     }
 }
