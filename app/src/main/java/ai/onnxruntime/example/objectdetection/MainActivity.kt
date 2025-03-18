@@ -26,6 +26,9 @@ class MainActivity : AppCompatActivity() {
     private var confidenceThreshold = 0.25f
     private var currentModel = ObjectDetector.MODEL_G1
 
+    private var prefixDetected = false
+    private var prefixPattern = ""
+
     companion object {
         const val TAG = "ORTObjectDetection"
     }
@@ -42,6 +45,8 @@ class MainActivity : AppCompatActivity() {
         )
         imageid = 0
         classes = readClasses()
+
+        BrailleClassIdMapper.loadMappingsFromResources(this)
 
 
         binding.thresholdSlider.setOnSeekBarChangeListener(object :
@@ -72,6 +77,15 @@ class MainActivity : AppCompatActivity() {
             binding.modelG2Button.isSelected = true
             classes = readClasses()
             Toast.makeText(this, "Model G2 selected", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.bothModelsButton.setOnClickListener {
+            currentModel = ObjectDetector.BOTH_MODELS
+            binding.modelG1Button.isSelected = false
+            binding.modelG2Button.isSelected = false
+            binding.bothModelsButton.isSelected = true
+            classes = readClasses()
+            Toast.makeText(this, "Both Models selected", Toast.LENGTH_SHORT).show()
         }
 
         binding.objectDetectionButton.setOnClickListener {
@@ -133,13 +147,9 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(result: Result) {
         Log.d(TAG, "Starting updateUI with ${result.outputBox.size} detections")
 
-        // Get actual displayed image dimensions
         val bitmap = result.outputBitmap
         val displayWidth = bitmap.width.toFloat()
         val displayHeight = bitmap.height.toFloat()
-
-        // Log dimensions for debugging
-        Log.d(TAG, "Original image dimensions: ${displayWidth}x${displayHeight}")
 
         val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutableBitmap)
@@ -158,71 +168,72 @@ class MainActivity : AppCompatActivity() {
             setShadowLayer(3f, 1f, 1f, Color.BLACK)
         }
 
-        val detectionResults = StringBuilder()
-        detectionResults.append("Found ${result.outputBox.size} detections\n\n")
+        // Process all detections
+        val processedDetections = mutableListOf<Map<String, Any>>()
+        val classDetailsMap = mutableListOf<Map<String, String>>()
 
-        // correct approach based on how YOLOv8 outputs coordinates
+        // Reset prefix detection
+        prefixDetected = false
+        prefixPattern = ""
+
         for (i in result.outputBox.indices) {
             val box = result.outputBox[i]
-
-            // Log raw box values
             Log.d(TAG, "Raw box $i values: ${box.contentToString()}")
 
-            // Reinterpret the coordinates based on INPUT_SIZE (640)
-            // The raw x,y,w,h are relative to the 640x640 input the model processed
-            val modelWidth = ObjectDetector.INPUT_SIZE.toFloat()
-            val modelHeight = ObjectDetector.INPUT_SIZE.toFloat()
+            val detection = BrailleResult.processRawDetection(box, displayWidth, displayHeight)
+            val classId = detection["classId"] as Int
+            val classDetails = BrailleResult.getClassDetails(classId, this, currentModel, classes)
 
-            // Calculate ratios to scale from model space to image space
-            val ratioWidth = displayWidth / modelWidth
-            val ratioHeight = displayHeight / modelHeight
+            // Handle prefixes
+            if (BrailleClassIdMapper.isPrefix(classDetails["binaryPattern"] ?: "")) {
+                prefixDetected = true
+                prefixPattern = classDetails["binaryPattern"] ?: ""
+                continue
+            }
 
-            // Apply transformation
-            val x = box[0] * ratioWidth
-            val y = box[1] * ratioHeight
-            val w = box[2] * ratioWidth
-            val h = box[3] * ratioHeight
-            val conf = box[4]
-            val classId = box[5].toInt()
-
-            // Calculate rectangle coordinates
-            val left = Math.max(0f, x - w / 2)
-            val top = Math.max(0f, y - h / 2)
-            val right = Math.min(displayWidth, x + w / 2)
-            val bottom = Math.min(displayHeight, y + h / 2)
-
-            Log.d(
-                TAG,
-                "Drawing box $i: ($left,$top,$right,$bottom) on image ${displayWidth}x${displayHeight}"
-            )
-
-            // Draw box
-            canvas.drawRect(left, top, right, bottom, boxPaint)
-
-//            // Draw crosshair at center point for debugging
-//            canvas.drawLine(x - 10, y, x + 10, y, boxPaint)
-//            canvas.drawLine(x, y - 10, x, y + 10, boxPaint)
-
-            // Add to results text
-            val className =
-                if (classId >= 0 && classId < classes.size) classes[classId] else "Unknown"
-            detectionResults.append("Box $i: $className (${(conf * 100).toInt()}%)\n")
-            detectionResults.append("  Center: (${x.toInt()}, ${y.toInt()}) Size: ${w.toInt()}x${h.toInt()}\n")
-
-            // Draw label
-            val label = "$className ${(conf * 100).toInt()}%"
-            canvas.drawText(label, left, Math.max(30f, top - 5f), textPaint)
+            // Store processed data
+            processedDetections.add(detection)
+            classDetailsMap.add(classDetails)
         }
 
+        // Apply sorting to ensure correct reading order
+        val sorted = BrailleResult.sortDetectionsInReadingOrder(processedDetections, classDetailsMap)
+        val sortedDetections = sorted.first
+        val sortedClassDetails = sorted.second
+
+        // Draw boxes on the bitmap
+        BrailleResult.drawDetectionBoxes(canvas, sortedDetections, sortedClassDetails, boxPaint, textPaint)
+
+        // Set the bitmap image
         binding.imageView2.setImageBitmap(mutableBitmap)
-        binding.detectionResultsText.text = detectionResults.toString()
+
+        // Format and display results
+        val detectionText = BrailleResult.formatDetectionResults(sortedDetections, sortedClassDetails)
+        val brailleText = BrailleResult.formatBrailleText(sortedClassDetails)
+
+        // Display both raw detection details and translated Braille text
+        binding.detectionResultsText.text = detectionText + "\n" + brailleText
     }
 
     private fun readClasses(): List<String> {
-        return if (currentModel == ObjectDetector.MODEL_G2) {
-            resources.openRawResource(R.raw.g2_classes).bufferedReader().readLines()
-        } else {
-            resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
+        return when (currentModel) {
+            ObjectDetector.MODEL_G2 -> {
+                resources.openRawResource(R.raw.g2_classes).bufferedReader().readLines()
+            }
+
+            ObjectDetector.BOTH_MODELS -> {
+                // Combine both class lists
+                val g1Classes =
+                    resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
+                val g2Classes =
+                    resources.openRawResource(R.raw.g2_classes).bufferedReader().readLines()
+                        .mapIndexed { index, className -> "$className" }
+                g1Classes + g2Classes
+            }
+
+            else -> {
+                resources.openRawResource(R.raw.g1_classes).bufferedReader().readLines()
+            }
         }
     }
 
