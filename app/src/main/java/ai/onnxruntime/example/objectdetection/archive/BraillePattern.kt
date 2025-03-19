@@ -1,13 +1,13 @@
-package ai.onnxruntime.example.objectdetection
-
-//Dot 1: 100000
-//Dot 2: 010000
-//Dot 3: 001000
-//Dot 4: 000100
-//Dot 5: 000010
-//Dot 6: 000001
-
-object BraillePatternMatcher {
+//package ai.onnxruntime.example.objectdetection
+//
+////Dot 1: 100000
+////Dot 2: 010000
+////Dot 3: 001000
+////Dot 4: 000100
+////Dot 5: 000010
+////Dot 6: 000001
+//
+//object BraillePatternMatcher {
 
 //    val grade1Dictionary = mapOf(
 //        // Alphabet
@@ -158,19 +158,19 @@ object BraillePatternMatcher {
 //        "000010-001101" to "ukol",
 //        "000010-010101" to "wakas"
 //    )
-
-    fun getBrailleEntry(classId: Int, grade: Int): BrailleEntry? {
-        val map = BrailleMap.getBrailleMap(grade)
-        return map[classId]
-    }
-
-    // Get Meaning from Class ID and Grade
-    fun getMeaning(classId: Int, grade: Int): String {
-        return getBrailleEntry(classId, grade)?.meaning ?: "?"
-    }
-
-    // Get Binary from Class ID and Grade
-    fun getBinary(classId: Int, grade: Int): String {
-        return getBrailleEntry(classId, grade)?.binary ?: "?"
-    }
-}
+//
+//    fun getBrailleEntry(classId: Int, grade: Int): BrailleEntry? {
+//        val map = BrailleMap.getBrailleMap(grade)
+//        return map[classId]
+//    }
+//
+//    // Get Meaning from Class ID and Grade
+//    fun getMeaning(classId: Int, grade: Int): String {
+//        return getBrailleEntry(classId, grade)?.meaning ?: "?"
+//    }
+//
+//    // Get Binary from Class ID and Grade
+//    fun getBinary(classId: Int, grade: Int): String {
+//        return getBrailleEntry(classId, grade)?.binary ?: "?"
+//    }
+//}
