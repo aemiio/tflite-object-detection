@@ -271,7 +271,7 @@ class BrailleFormatter {
     }
 
     /**
-     * Check if a text represents a whole word in Grade 2 Braille
+     * Check if a text represents a whole word
      */
     private fun isWholeWord(text: String): Boolean {
         val wholeWords = setOf(
