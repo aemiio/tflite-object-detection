@@ -13,12 +13,12 @@ object BrailleClassIdMapper {
     init {
         // Initialize maps from BrailleMap data
         BrailleMap.G1brailleMap.forEach { (id, entry) ->
-            // Get first part of binary pattern (for multi-cell patterns like "000001-100000")
-            g1ClassIdToBinaryMap[id] = entry.binary.split("-").first()
+            // Store the full binary pattern without splitting
+            g1ClassIdToBinaryMap[id] = entry.binary
         }
 
         BrailleMap.G2brailleMap.forEach { (id, entry) ->
-            g2ClassIdToBinaryMap[id] = entry.binary.split("-").first()
+            g2ClassIdToBinaryMap[id] = entry.binary
         }
     }
 

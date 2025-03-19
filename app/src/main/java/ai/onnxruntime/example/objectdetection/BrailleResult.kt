@@ -48,17 +48,17 @@ object BrailleResult {
             // Use appropriate map based on model type
             if (isG2) {
                 val entry = BrailleMap.G2brailleMap[actualClassId]
-                Pair(entry?.binary?.split("-")?.first() ?: "?", entry?.meaning ?: "?")
+                Pair(entry?.binary ?: "?", entry?.meaning ?: "?")
             } else {
                 val entry = BrailleMap.G1brailleMap[actualClassId]
-                Pair(entry?.binary?.split("-")?.first() ?: "?", entry?.meaning ?: "?")
+                Pair(entry?.binary ?: "?", entry?.meaning ?: "?")
             }
         } else if (currentModel == ObjectDetector.MODEL_G2) {
             val entry = BrailleMap.G2brailleMap[classId]
-            Pair(entry?.binary?.split("-")?.first() ?: "?", entry?.meaning ?: "?")
+            Pair(entry?.binary ?: "?", entry?.meaning ?: "?")
         } else {
             val entry = BrailleMap.G1brailleMap[classId]
-            Pair(entry?.binary?.split("-")?.first() ?: "?", entry?.meaning ?: "?")
+            Pair(entry?.binary ?: "?", entry?.meaning ?: "?")
         }
 
         return mapOf(
