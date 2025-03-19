@@ -26,8 +26,6 @@ class MainActivity : AppCompatActivity() {
     private var confidenceThreshold = 0.25f
     private var currentModel = ObjectDetector.MODEL_G1
 
-    private var prefixDetected = false
-    private var prefixPattern = ""
 
     companion object {
         const val TAG = "ORTObjectDetection"
@@ -147,13 +145,6 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(result: Result) {
         Log.d(TAG, "Starting updateUI with ${result.outputBox.size} detections")
 
-        val bitmap = result.outputBitmap
-        val displayWidth = bitmap.width.toFloat()
-        val displayHeight = bitmap.height.toFloat()
-
-        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = Canvas(mutableBitmap)
-
         val boxPaint = Paint().apply {
             color = Color.GREEN
             style = Paint.Style.STROKE
@@ -168,51 +159,19 @@ class MainActivity : AppCompatActivity() {
             setShadowLayer(3f, 1f, 1f, Color.BLACK)
         }
 
-        // Process all detections
-        val processedDetections = mutableListOf<Map<String, Any>>()
-        val classDetailsMap = mutableListOf<Map<String, String>>()
+        // Process detections using BraillePostProcessor
+        val processedResult = BraillePostProcessor.processDetections(
+            result = result,
+            context = this,
+            currentModel = currentModel,
+            classes = classes,
+            boxPaint = boxPaint,
+            textPaint = textPaint
+        )
 
-        // Reset prefix detection
-        prefixDetected = false
-        prefixPattern = ""
-
-        for (i in result.outputBox.indices) {
-            val box = result.outputBox[i]
-            Log.d(TAG, "Raw box $i values: ${box.contentToString()}")
-
-            val detection = BrailleResult.processRawDetection(box, displayWidth, displayHeight)
-            val classId = detection["classId"] as Int
-            val classDetails = BrailleResult.getClassDetails(classId, this, currentModel, classes)
-
-            // Handle prefixes
-            if (BrailleClassIdMapper.isPrefix(classDetails["binaryPattern"] ?: "")) {
-                prefixDetected = true
-                prefixPattern = classDetails["binaryPattern"] ?: ""
-                continue
-            }
-
-            // Store processed data
-            processedDetections.add(detection)
-            classDetailsMap.add(classDetails)
-        }
-
-        // Apply sorting to ensure correct reading order
-        val sorted = BrailleResult.sortDetectionsInReadingOrder(processedDetections, classDetailsMap)
-        val sortedDetections = sorted.first
-        val sortedClassDetails = sorted.second
-
-        // Draw boxes on the bitmap
-        BrailleResult.drawDetectionBoxes(canvas, sortedDetections, sortedClassDetails, boxPaint, textPaint)
-
-        // Set the bitmap image
-        binding.imageView2.setImageBitmap(mutableBitmap)
-
-        // Format and display results
-        val detectionText = BrailleResult.formatDetectionResults(sortedDetections, sortedClassDetails)
-        val brailleText = BrailleResult.formatBrailleText(sortedClassDetails)
-
-        // Display both raw detection details and translated Braille text
-        binding.detectionResultsText.text = detectionText + "\n" + brailleText
+        binding.imageView2.setImageBitmap(processedResult.displayBitmap)
+        binding.detectionResultsText.text =
+            processedResult.detectionText + "\n" + processedResult.translatedText
     }
 
     private fun readClasses(): List<String> {
