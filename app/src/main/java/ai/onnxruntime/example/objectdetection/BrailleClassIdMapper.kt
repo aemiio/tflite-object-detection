@@ -73,9 +73,6 @@ object BrailleClassIdMapper {
         Log.d(TAG, "Total mappings: ${g1ClassIdToBinaryMap.size} G1, ${g2ClassIdToBinaryMap.size} G2")
     }
 
-    fun isPrefix(binaryPattern: String): Boolean {
-        return binaryPattern == "000100" || binaryPattern == "000010" // Dot 4 or Dot 5
-    }
 
     // Map class IDs to binary patterns and meanings directly
     fun getBrailleEntry(classId: Int, grade: Int): BrailleEntry? {
