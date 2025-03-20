@@ -10,6 +10,7 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import androidx.core.graphics.scale
 
 data class Result(
     var outputBitmap: Bitmap,
@@ -145,7 +146,7 @@ internal class ObjectDetector {
         val inputBuffer = ByteBuffer.allocateDirect(4 * INPUT_SIZE * INPUT_SIZE * 3)
         inputBuffer.order(ByteOrder.nativeOrder())
 
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
+        val resizedBitmap = bitmap.scale(INPUT_SIZE, INPUT_SIZE)
         val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
         resizedBitmap.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
 
