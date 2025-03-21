@@ -199,7 +199,33 @@ class BrailleFormatter {
                             i++
                             continue
                         }
-                        "dot_4", "dot_5" -> {
+                        "dot_4" -> {
+                            // Check if next cell is 'n' or 'N' to form ñ/Ñ
+                            if (i + 1 < word.size) {
+                                val nextCell = word[i + 1]
+                                if (nextCell.meaning == "n") {
+                                    // dot_4 + n → ñ
+                                    wordBuilder.append("ñ")
+                                    i += 2  // Skip both cells
+                                    continue
+                                } else if (capitalizeNext && nextCell.meaning == "n") {
+                                    // dot_4 + capital + n → Ñ
+                                    wordBuilder.append("Ñ")
+                                    capitalizeNext = false
+                                    i += 2  // Skip both cells
+                                    continue
+                                } else if (nextCell.meaning == "N") {
+                                    // dot_4 + N → Ñ
+                                    wordBuilder.append("Ñ")
+                                    i += 2  // Skip both cells
+                                    continue
+                                }
+                            }
+                            // Normal dot_4 handling (not part of ñ)
+                            i++
+                            continue
+                        }
+                        "dot_5" -> {
                             // Skip prefix indicators but continue with next cell
                             i++
                             continue
