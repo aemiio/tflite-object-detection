@@ -37,7 +37,7 @@ object BrailleResult {
 
     // Process class ID and get related information
     fun getClassDetails(classId: Int, context: Context, currentModel: String, classes: List<String>): Map<String, String> {
-        val className = BrailleClass.getClassName(classId, context, currentModel, classes)
+        val className = BrailleClass.getClassName(classId, currentModel, classes)
 
         // Get binary pattern and meaning based on which model was used
         val (binaryPattern, meaningText) = if (currentModel == ObjectDetector.BOTH_MODELS) {
