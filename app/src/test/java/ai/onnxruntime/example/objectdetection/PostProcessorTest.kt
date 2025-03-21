@@ -7,30 +7,29 @@ import androidx.core.graphics.createBitmap
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mock
-import org.mockito.Mockito.`when`
-import org.mockito.MockitoAnnotations
 import org.robolectric.RobolectricTestRunner
 import org.junit.Assert.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkObject
 
 @RunWith(RobolectricTestRunner::class)
 class BraillePostProcessorTest {
 
-    @Mock
     private lateinit var context: Context
-
-    @Mock
     private lateinit var resources: android.content.res.Resources
-
     private lateinit var boxPaint: Paint
     private lateinit var textPaint: Paint
     private lateinit var bitmap: Bitmap
 
     @Before
     fun setUp() {
-        MockitoAnnotations.openMocks(this)
-        `when`(context.resources).thenReturn(resources)
-        `when`(resources.getString(org.mockito.ArgumentMatchers.anyInt())).thenReturn("mock_string")
+        context = mockk(relaxed = true)
+        resources = mockk(relaxed = true)
+
+        every { context.resources } returns resources
+        every { resources.getString(any()) } returns "mock_string"
+
 
         // Initialize test objects
         boxPaint = Paint().apply { color = 0xFF0000FF.toInt() }
@@ -38,6 +37,7 @@ class BraillePostProcessorTest {
         bitmap = createBitmap(640, 480)
     }
 
+    // PASSED
     @Test
     fun testBasicG1Detection() {
         println("Test 1: Basic Grade 1 Detection")
@@ -45,11 +45,11 @@ class BraillePostProcessorTest {
         // Mocked result with Grade 1 characters: h e l l o
         val result = Result(
             outputBox = listOf(
-                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 8.0f),  // h
-                floatArrayOf(0.3f, 0.1f, 0.4f, 0.2f, 0.90f, 5.0f),  // e
-                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 12.0f), // l
-                floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.92f, 12.0f), // l
-                floatArrayOf(0.9f, 0.1f, 1.0f, 0.2f, 0.91f, 15.0f)  // o
+                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 47.0f),  // h
+                floatArrayOf(0.3f, 0.1f, 0.4f, 0.2f, 0.90f, 43.0f),  // e
+                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 51.0f), // l
+                floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.92f, 51.0f), // l
+                floatArrayOf(0.9f, 0.1f, 1.0f, 0.2f, 0.91f, 55.0f)  // o
             ).toTypedArray(),
             outputBitmap = bitmap
         )
@@ -67,6 +67,9 @@ class BraillePostProcessorTest {
 
         assertTrue("Expected 'h' in detection text", resultObj.detectionText.contains("h"))
         assertTrue("Expected 'hello' in translated text", resultObj.translatedText.contains("hello"))
+
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
 
         println("Basic Grade 1 Detection Test: PASSED")
     }
@@ -104,6 +107,9 @@ class BraillePostProcessorTest {
         assertTrue("Expected properly formatted translation",
             resultObj.translatedText.contains("sang-ayon hapon"))
 
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
+
         println("Basic Grade 2 Detection Test: PASSED")
     }
 
@@ -137,9 +143,13 @@ class BraillePostProcessorTest {
         assertTrue("Expected 'ibig' in translated text",
             resultObj.translatedText.contains("ibig"))
 
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
+
         println("Both Models Detection Test: PASSED")
     }
 
+    // PASSED
     @Test
     fun testG1PrefixHandling() {
         println("Test 4a: G1 Prefix Handling")
@@ -148,12 +158,12 @@ class BraillePostProcessorTest {
         val result = Result(
             outputBox = listOf(
                 // Test 1: capital + a -> A
-                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 27.0f),  // capital/dot_6
-                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 1.0f),   // a -> A
+                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 40.0f),  // capital/dot_6
+                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 37.0f),   // a -> A
 
                 // Test 2: number + a -> 1
-                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 35.0f),  // number sign
-                floatArrayOf(0.6f, 0.1f, 0.7f, 0.2f, 0.92f, 1.0f)    // a -> 1
+                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 54.0f),  // number sign
+                floatArrayOf(0.6f, 0.1f, 0.7f, 0.2f, 0.92f, 37.0f)    // a -> 1
             ).toTypedArray(),
             outputBitmap = bitmap
         )
@@ -169,26 +179,31 @@ class BraillePostProcessorTest {
             textPaint = textPaint
         )
 
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
+
         assertTrue("Expected capitalized 'A' and number '1' in G1 translated text",
             resultObj.translatedText.contains("A") && resultObj.translatedText.contains("1"))
+
 
         println("G1 Prefix Handling Test: PASSED")
     }
 
+    // PASSED
     @Test
     fun testG2PrefixHandling() {
         println("Test 4b: G2 Prefix Handling")
 
-        // Test dot_4 and dot_5 prefixes in G2
+        // Test dot_5 prefixes in G2
         val result = Result(
             outputBox = listOf(
-                // Test 1: dot_4 + n -> ñ
-                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 42.0f),  // dot_4
-                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 14.0f),  // n -> ñ
+                // Test 1: dot_5 + ako
+                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 42.0f),  // dot_5
+                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 0.0f),  // ako
 
-                // Test 2: dot_4 + another letter (not n) should remain separate
-                floatArrayOf(0.4f, 0.1f, 0.5f, 0.2f, 0.93f, 42.0f),  // dot_4
-                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.92f, 1.0f),   // a (should remain separate)
+                // Test 2: dot_5 + alam
+                floatArrayOf(0.4f, 0.1f, 0.5f, 0.2f, 0.93f, 42.0f),  // dot_5
+                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.92f, 1.0f),   // alam
 
                 // Test 3: dot_5 + noon
                 floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.91f, 19.0f),  // dot_5
@@ -212,15 +227,21 @@ class BraillePostProcessorTest {
             textPaint = textPaint
         )
 
-        assertTrue("Expected 'ñ', and proper prefixes in G2 translated text",
-            resultObj.translatedText.contains("ñ") &&
-                    resultObj.detectionText.contains("dot_4") &&
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
+
+        assertTrue("Expected proper prefixes in G2 translated text",
+            resultObj.translatedText.contains("ako") &&
+                    resultObj.detectionText.contains("alam") &&
+                    resultObj.detectionText.contains("dot_5") &&
                     resultObj.translatedText.contains("noon") &&
                     resultObj.translatedText.contains("opo"))
+
 
         println("G2 Prefix Handling Test: PASSED")
     }
 
+    // PASSED
     @Test
     fun testBothModelsPrefixHandling() {
         println("Test 4c: Both Models Prefix Handling")
@@ -230,20 +251,20 @@ class BraillePostProcessorTest {
         val result = Result(
             outputBox = listOf(
                 // G1: capital + a -> A
-                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 27.0f),    // capital/dot_6 (G1)
-                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 1.0f),     // a -> A (G1)
+                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 40.0f),    // capital/dot_6 (G1)
+                floatArrayOf(0.2f, 0.1f, 0.3f, 0.2f, 0.90f, 37.0f),     // a -> A (G1)
 
-                // G2: dot_4 + n -> ñ
-                floatArrayOf(0.4f, 0.1f, 0.5f, 0.2f, 0.93f, 1042.0f),  // dot_4 (G2)
-                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.92f, 1014.0f),  // n -> ñ (G2)
+                // G1: dot_4 + n -> ñ
+                floatArrayOf(0.4f, 0.1f, 0.5f, 0.2f, 0.93f, 42.0f),  // dot_4 (G1)
+                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.92f, 53.0f),  // n -> ñ (G1)
 
                 // G2: dot_5 + noon
                 floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.91f, 1019.0f),  // dot_5 (G2)
                 floatArrayOf(0.8f, 0.1f, 0.9f, 0.2f, 0.94f, 1060.0f),  // noon (G2)
 
                 // G1: number + b -> 2
-                floatArrayOf(0.1f, 0.3f, 0.2f, 0.4f, 0.89f, 35.0f),    // number sign (G1)
-                floatArrayOf(0.2f, 0.3f, 0.3f, 0.4f, 0.93f, 2.0f)      // b -> 2 (G1)
+                floatArrayOf(0.1f, 0.3f, 0.2f, 0.4f, 0.89f, 54.0f),    // number sign (G1)
+                floatArrayOf(0.2f, 0.3f, 0.3f, 0.4f, 0.93f, 38.0f)      // b -> 2 (G1)
             ).toTypedArray(),
             outputBitmap = bitmap
         )
@@ -258,6 +279,9 @@ class BraillePostProcessorTest {
             boxPaint = boxPaint,
             textPaint = textPaint
         )
+
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
 
         assertTrue("Expected 'A', 'ñ', 'noon', and '2' in BOTH_MODELS translated text",
             resultObj.translatedText.contains("A") &&
@@ -295,9 +319,15 @@ class BraillePostProcessorTest {
             resultObj.detectionText.contains("000010-011110") ||
                     resultObj.detectionText.contains("talaga"))
 
+
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
+
         println("Multi-Cell Binary Pattern Test: PASSED")
     }
 
+
+    // PASSED
     @Test
     fun testWholeWordVsPartWord() {
         println("Test 6: Whole Word vs Part Word Handling")
@@ -305,10 +335,10 @@ class BraillePostProcessorTest {
         // Test with characters that should form "katha" (k + at + h + a)
         val result = Result(
             outputBox = listOf(
-                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 11.0f),    // k (G1)
-                floatArrayOf(0.3f, 0.1f, 0.4f, 0.2f, 0.90f, 1040.0f),  // at (G2 part word)
-                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 8.0f),     // h (G1)
-                floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.92f, 1.0f)      // a (G1)
+                floatArrayOf(0.1f, 0.1f, 0.2f, 0.2f, 0.95f, 50.0f),    // k (G1)
+                floatArrayOf(0.3f, 0.1f, 0.4f, 0.2f, 0.90f, 1008.0f),  // at (G2 part word)
+                floatArrayOf(0.5f, 0.1f, 0.6f, 0.2f, 0.93f, 47.0f),     // h (G1)
+                floatArrayOf(0.7f, 0.1f, 0.8f, 0.2f, 0.92f, 37.0f)      // a (G1)
             ).toTypedArray(),
             outputBitmap = bitmap
         )
@@ -326,6 +356,10 @@ class BraillePostProcessorTest {
 
         assertTrue("Expected 'katha' as a single word in translated text",
             resultObj.translatedText.contains("katha"))
+
+
+        println("Detection text: ${resultObj.detectionText}")
+        println("Translated text: ${resultObj.translatedText}")
 
         println("Whole Word vs Part Word Handling Test: PASSED")
     }
