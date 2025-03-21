@@ -58,8 +58,7 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
 
     // Mockito for mocking
-    testImplementation 'org.mockito:mockito-core:5.3.1'
-    testImplementation 'org.mockito:mockito-android:5.3.1'
+    testImplementation 'io.mockk:mockk:1.13.5'
 
     // Robolectric for Android unit testing
     testImplementation 'org.robolectric:robolectric:4.10.3'
