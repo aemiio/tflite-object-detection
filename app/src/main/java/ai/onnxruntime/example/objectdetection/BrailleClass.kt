@@ -1,6 +1,7 @@
 package ai.onnxruntime.example.objectdetection
 
 import android.content.Context
+import java.io.File
 
 /**
  * Helper class for handling class name retrieval and related functions
@@ -8,8 +9,7 @@ import android.content.Context
 object BrailleClass {
     private const val TAG = "BrailleClass"
 
-    // Get class name from class ID
-    fun getClassName(classId: Int, context: Context, currentModel: String, classes: List<String>): String {
+    fun getClassName(classId: Int, currentModel: String, classes: List<String>): String {
         return if (currentModel == ObjectDetector.BOTH_MODELS) {
             val bothModelsMerger = BothModelsMerger()
             val actualClassId = bothModelsMerger.getActualClassId(classId)
@@ -17,10 +17,8 @@ object BrailleClass {
 
             if (isG2) {
                 // For G2 detections
-                val g1ClassCount = context.resources.openRawResource(R.raw.g1_classes)
-                    .bufferedReader().readLines().size
-                if (actualClassId >= 0 && actualClassId < (classes.size - g1ClassCount)) {
-                    classes[g1ClassCount + actualClassId]
+                if (actualClassId >= 0 && actualClassId < classes.size / 2) {
+                    classes[classes.size / 2 + actualClassId]
                 } else {
                     "Unknown G2"
                 }
