@@ -3,6 +3,8 @@ package ai.onnxruntime.example.objectdetection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.util.Log
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
@@ -11,6 +13,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import androidx.core.graphics.scale
+import kotlin.div
 
 data class Result(
     var outputBitmap: Bitmap,
@@ -26,12 +29,36 @@ internal class ObjectDetector {
         const val MODEL_G1 = "g1_best_float32.tflite"
         const val MODEL_G2 = "g2_best_float32.tflite"
         const val BOTH_MODELS = "both_models"
+
+        private var scaleFactor: Float = 1.0f
+        private var offsetX: Int = 0
+        private var offsetY: Int = 0
+
+        fun getScaleFactor(): Float = scaleFactor
+        fun getOffsetX(): Int = offsetX
+        fun getOffsetY(): Int = offsetY
+
+        private var instance: ObjectDetector? = null
+        private var lastPreprocessedBitmap: Bitmap? = null
+
+        fun getInstance(): ObjectDetector {
+            if (instance == null) {
+                instance = ObjectDetector()
+            }
+            return instance!!
+        }
+
+        fun getPreprocessedInputBitmap(): Bitmap? {
+            return lastPreprocessedBitmap
+        }
     }
 
     private var tfliteG1: Interpreter? = null
     private var tfliteG2: Interpreter? = null
     private var currentModel: String = MODEL_G1
     private val bothModelsMerger = BothModelsMerger()
+
+
 
     fun initialize(context: Context, modelName: String = MODEL_G1) {
 
@@ -146,18 +173,43 @@ internal class ObjectDetector {
         val inputBuffer = ByteBuffer.allocateDirect(4 * INPUT_SIZE * INPUT_SIZE * 3)
         inputBuffer.order(ByteOrder.nativeOrder())
 
-        val resizedBitmap = bitmap.scale(INPUT_SIZE, INPUT_SIZE)
+        // Create a blank canvas with padding
+        val paddedBitmap = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(paddedBitmap)
+        canvas.drawColor(Color.BLACK) // Fill with black background
+
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+
+        // Calculate scaling factor to fit within 640x640
+        scaleFactor = minOf(
+            INPUT_SIZE.toFloat() / originalWidth,
+            INPUT_SIZE.toFloat() / originalHeight
+        )
+
+        // Calculate new dimensions
+        val scaledWidth = (originalWidth * scaleFactor).toInt()
+        val scaledHeight = (originalHeight * scaleFactor).toInt()
+
+        offsetX = (INPUT_SIZE - scaledWidth) / 2
+        offsetY = (INPUT_SIZE - scaledHeight) / 2
+
+        // Resize and center the image on the canvas
+        val resizedBitmap = bitmap.scale(scaledWidth, scaledHeight)
+        canvas.drawBitmap(resizedBitmap, offsetX.toFloat(), offsetY.toFloat(), null)
+
+        // Save the padded input image for visualization
+        Companion.lastPreprocessedBitmap = paddedBitmap.copy(Bitmap.Config.ARGB_8888, false)
+
+        // Extract pixels from the padded bitmap
         val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
-        resizedBitmap.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
+        paddedBitmap.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
 
         inputBuffer.rewind()
-
         for (pixel in pixels) {
-            // TFLite model expects HWC format - already matches the model input [1,640,640,3]
             val r = (pixel shr 16 and 0xFF) / 255.0f
             val g = (pixel shr 8 and 0xFF) / 255.0f
             val b = (pixel and 0xFF) / 255.0f
-
             inputBuffer.putFloat(r)
             inputBuffer.putFloat(g)
             inputBuffer.putFloat(b)
@@ -166,6 +218,7 @@ internal class ObjectDetector {
         return inputBuffer
     }
 
+
     private fun postprocessYOLOv8(
         outputBuffer: Array<FloatArray>,
         originalWidth: Int,
@@ -173,17 +226,13 @@ internal class ObjectDetector {
         confidenceThreshold: Float
     ): Array<FloatArray> {
         val rawResults = mutableListOf<FloatArray>()
-        val outputShape = outputBuffer.size // 71 or 93
+        val outputShape = outputBuffer.size
 
-        Log.d(TAG, "Original image dimensions: $originalWidth x $originalHeight")
-        Log.d(TAG, "Processing model output with $outputShape classes")
-
-        // 8400 total number of detection boxes predicted by the model (yolo architecture)
+        // Process 8400 detection boxes
         for (i in 0 until 8400) {
             var maxClassScore = 0f
             var bestClassIdx = 0
 
-            // magstart sya after ng x,y,w,h values
             for (c in 4 until outputShape) {
                 val score = outputBuffer[c][i]
                 if (score > maxClassScore) {
@@ -193,19 +242,32 @@ internal class ObjectDetector {
             }
 
             if (maxClassScore >= confidenceThreshold) {
-                // IMPORTANT: YOLOv8 outputs normalized coordinates (0-1)
-                // Convert to model space (0-640)
-                val x = outputBuffer[0][i] * INPUT_SIZE
-                val y = outputBuffer[1][i] * INPUT_SIZE
-                val w = outputBuffer[2][i] * INPUT_SIZE
-                val h = outputBuffer[3][i] * INPUT_SIZE
+                // Get normalized coordinates (0-1)
+                val normX = outputBuffer[0][i]
+                val normY = outputBuffer[1][i]
+                val normW = outputBuffer[2][i]
+                val normH = outputBuffer[3][i]
 
-                Log.d(
-                    TAG,
-                    "Detection in model space: x=$x, y=$y, w=$w, h=$h, conf=$maxClassScore, class=$bestClassIdx"
-                )
+                // Convert to model space pixels (640x640)
+                val modelX = normX * INPUT_SIZE
+                val modelY = normY * INPUT_SIZE
+                val modelW = normW * INPUT_SIZE
+                val modelH = normH * INPUT_SIZE
 
-                rawResults.add(floatArrayOf(x, y, w, h, maxClassScore, bestClassIdx.toFloat()))
+                // Store both model coordinates and original image coordinates
+                // Format: [originalX, originalY, originalW, originalH, confidence, classId, modelX, modelY, modelW, modelH]
+                rawResults.add(floatArrayOf(
+                    (modelX - offsetX) / scaleFactor,  // originalX
+                    (modelY - offsetY) / scaleFactor,  // originalY
+                    modelW / scaleFactor,              // originalW
+                    modelH / scaleFactor,              // originalH
+                    maxClassScore,                     // confidence
+                    bestClassIdx.toFloat(),            // classId
+                    modelX,                            // modelX - store for debug visualization
+                    modelY,                            // modelY
+                    modelW,                            // modelW
+                    modelH                             // modelH
+                ))
             }
         }
 
