@@ -201,9 +201,10 @@ class MainActivity : AppCompatActivity() {
 
         val useTestImages = true
 
-        val imageCount = 5
+        val imageCount = 6
         imageid = (imageid + 1) % imageCount
-        val fileNumber = imageid + 1 // Use 1-based numbering (1,2,3,4,5)
+
+        val fileNumber = if (imageid == 0) 0 else imageid
 
 
         return try {
