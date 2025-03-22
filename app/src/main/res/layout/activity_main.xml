@@ -108,6 +108,13 @@
                 android:scaleType="fitCenter"
                 android:adjustViewBounds="true"/>
 
+            <ImageView
+                android:id="@+id/imageViewDebug"
+                android:layout_width="match_parent"
+                android:layout_height="250dp"
+                android:scaleType="fitCenter"
+                android:adjustViewBounds="true"/>
+
             <TextView
                 android:id="@+id/detectionResultsText"
                 android:layout_width="match_parent"
