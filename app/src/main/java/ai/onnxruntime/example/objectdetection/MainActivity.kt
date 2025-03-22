@@ -170,6 +170,10 @@ class MainActivity : AppCompatActivity() {
         )
 
         binding.imageView2.setImageBitmap(processedResult.displayBitmap)
+
+        // Remove debug view completely
+        binding.imageViewDebug.visibility = View.GONE
+
         binding.detectionResultsText.text =
             processedResult.detectionText + "\n" + processedResult.translatedText
     }
